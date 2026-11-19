@@ -1,0 +1,34 @@
+# Mimics SRC-Nginx (rsc-surf-nl/plugins/plugin-nginx): one HTTPS server block that
+# includes /etc/nginx/app-location-conf.d/*.conf, port 80 redirecting to HTTPS,
+# no upload limit. A self-signed certificate replaces SRC's Let's Encrypt one.
+- name: Create the include directory SRC-Nginx provides
+  ansible.builtin.file:
+    path: /etc/nginx/app-location-conf.d
+    state: directory
+    mode: "0755"
+
+- name: Create the certificate directory
+  ansible.builtin.file:
+    path: /etc/nginx/certs
+    state: directory
+    mode: "0700"
+
+- name: Create a self-signed certificate
+  ansible.builtin.command:
+    argv: [openssl, req, -x509, -newkey, rsa:2048, -nodes, -days, "90",
+           -subj, "/CN={{ ansible_facts['fqdn'] }}",
+           -keyout, /etc/nginx/certs/server.key, -out, /etc/nginx/certs/server.crt]
+    creates: /etc/nginx/certs/server.crt
+
+- name: Remove the default site, as SRC-Nginx does
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Install the server block
+  ansible.builtin.template:
+    src: standin_server.conf.j2
+    dest: /etc/nginx/conf.d/standin_server.conf
+    mode: "0644"
+  notify: Reload nginx

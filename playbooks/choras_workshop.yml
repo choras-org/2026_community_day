@@ -1,0 +1,45 @@
+# SRC component: one CHORAS instance per participant behind SRC-Nginx.
+# Catalog item order: SRC-OS, SRC-CO, SRC-Nginx, SRC-External, Docker, this playbook.
+# Outside SRC, run local_prepare.yml first (Docker, git, an Nginx stand-in).
+- name: CHORAS workshop
+  hosts: localhost
+  gather_facts: true
+
+  pre_tasks:
+    - name: Parse the comma-separated parameters
+      ansible.builtin.set_fact:
+        choras_participant_list: "{{ choras_participants.split(',') | map('trim') | reject('equalto', '') | list }}"
+        choras_method_list: "{{ choras_methods.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+    # Logins end up in Nginx config, file paths and compose project names.
+    - name: Check the participant names
+      ansible.builtin.assert:
+        that:
+          - choras_participant_list | length > 0
+          - choras_participant_list | select('match', '^[a-z0-9_-]+$') | list | length == choras_participant_list | length
+          - choras_participant_list | unique | length == choras_participant_list | length
+        fail_msg: "choras_participants must be unique names of lowercase letters, digits, - and _: {{ choras_participants }}"
+
+    - name: Check that Docker with the compose plugin is installed
+      ansible.builtin.command: docker compose version
+      changed_when: false
+
+    - name: Check that the SRC-Nginx include directory exists
+      ansible.builtin.stat:
+        path: /etc/nginx/app-location-conf.d
+      register: choras_nginx_dir
+
+    - name: Stop if there's no SRC-Nginx (or stand-in)
+      ansible.builtin.assert:
+        that: choras_nginx_dir.stat.isdir | default(false)
+        fail_msg: "/etc/nginx/app-location-conf.d is missing: add SRC-Nginx before this component, or run local_prepare.yml"
+
+  roles:
+    - choras_build
+    - choras_instances
+    - choras_nginx
+
+  post_tasks:
+    - name: Show where to log in
+      ansible.builtin.debug:
+        msg: "CHORAS runs at {{ choras_public_url }} for {{ choras_participant_list | length }} participants; logins in {{ choras_credentials_file }}"

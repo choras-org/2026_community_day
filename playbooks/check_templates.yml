@@ -1,0 +1,52 @@
+# Renders the compose and map templates for three participants and checks that each
+# login is routed to its own backend port. Runs anywhere, changes nothing outside /tmp:
+#   ansible-playbook playbooks/check_templates.yml
+- name: Check that the map and the compose files agree on the ports
+  hosts: localhost
+  gather_facts: false
+  vars:
+    choras_participant_list: [anna, bob, user03]
+    choras_public_url: https://choras.example.org
+    out: /tmp/choras_check_templates
+
+  tasks:
+    - name: Create the output directory
+      ansible.builtin.file:
+        path: "{{ out }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render the compose file per participant
+      ansible.builtin.template:
+        src: roles/choras_instances/templates/compose.yml.j2
+        dest: "{{ out }}/{{ item }}.yml"
+        mode: "0644"
+      loop: "{{ choras_participant_list }}"
+      loop_control:
+        index_var: choras_index
+
+    - name: Render the map
+      ansible.builtin.template:
+        src: roles/choras_nginx/templates/choras_users.conf.j2
+        dest: "{{ out }}/choras_users.conf"
+        mode: "0644"
+
+    - name: Read the rendered files
+      ansible.builtin.set_fact:
+        map_conf: "{{ lookup('file', out + '/choras_users.conf') }}"
+        compose_anna: "{{ lookup('file', out + '/anna.yml') | from_yaml }}"
+        compose_bob: "{{ lookup('file', out + '/bob.yml') | from_yaml }}"
+        compose_user03: "{{ lookup('file', out + '/user03.yml') | from_yaml }}"
+
+    - name: Check the routing
+      ansible.builtin.assert:
+        that:
+          - "'anna 127.0.0.1:8101;' in map_conf"
+          - "'bob 127.0.0.1:8102;' in map_conf"
+          - "'user03 127.0.0.1:8103;' in map_conf"
+          - "'default \"\";' in map_conf"
+          - compose_anna.services.backend.ports == ['127.0.0.1:8101:5001']
+          - compose_bob.services.backend.ports == ['127.0.0.1:8102:5001']
+          - compose_user03.services.backend.ports == ['127.0.0.1:8103:5001']
+          - compose_bob.services.backend.environment.CHORAS_INSTANCE_NAME == 'bob'
+          - compose_bob.services.backend.environment.PUBLIC_API_URL == 'https://choras.example.org/api'

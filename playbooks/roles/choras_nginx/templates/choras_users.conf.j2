@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Login → that participant's backend. Logins without an instance get a 403 (choras.conf).
+map $remote_user $choras_backend {
+    default "";
+{% for user in choras_participant_list %}
+    {{ user }} 127.0.0.1:{{ choras_base_port | int + loop.index }};
+{% endfor %}
+}

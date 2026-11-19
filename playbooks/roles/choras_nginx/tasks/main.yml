@@ -1,0 +1,58 @@
+# Passwords for the credentials sheet: 10 characters without lookalikes (0/O, 1/l/I).
+# Existing ones are kept, so re-running the playbook doesn't invalidate printed cards.
+- name: Generate a password per participant
+  ansible.builtin.shell: |
+    umask 077
+    touch "{{ choras_credentials_file }}"
+    grep -q "^{{ item }} " "{{ choras_credentials_file }}" && exit 0
+    python3 -c 'import secrets; print("{{ item }}", "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10)))' >> "{{ choras_credentials_file }}"
+    echo added
+  register: choras_password
+  changed_when: "'added' in choras_password.stdout"
+  loop: "{{ choras_participant_list }}"
+
+- name: Create the htpasswd directory
+  ansible.builtin.file:
+    path: /etc/nginx/passwd
+    state: directory
+    owner: root
+    group: www-data
+    mode: "0750"
+
+# Only hashes on the server side; nginx reads the file on every request, so no reload.
+# Rebuilt from the sheet each run (new salts), for the current participant list only.
+- name: Write the htpasswd file
+  ansible.builtin.shell: |
+    set -eu
+    umask 027
+    : > /etc/nginx/passwd/choras.new
+    for user in {{ choras_participant_list | join(' ') }}; do
+      password=$(grep "^$user " "{{ choras_credentials_file }}" | cut -d' ' -f2)
+      echo "$user:$(openssl passwd -6 "$password")" >> /etc/nginx/passwd/choras.new
+    done
+    chgrp www-data /etc/nginx/passwd/choras.new
+    mv /etc/nginx/passwd/choras.new /etc/nginx/passwd/choras
+  changed_when: false
+  no_log: true
+
+- name: Install the username → backend map
+  ansible.builtin.template:
+    src: choras_users.conf.j2
+    dest: /etc/nginx/conf.d/choras_users.conf
+    mode: "0644"
+  notify: Reload nginx
+
+# Before choras.conf, which uses the zone.
+- name: Install the rate-limit zone
+  ansible.builtin.copy:
+    src: choras_limits.conf
+    dest: /etc/nginx/conf.d/choras_limits.conf
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Install the CHORAS locations
+  ansible.builtin.copy:
+    src: choras.conf
+    dest: /etc/nginx/app-location-conf.d/choras.conf
+    mode: "0644"
+  notify: Reload nginx

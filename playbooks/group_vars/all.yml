@@ -1,0 +1,34 @@
+# Defaults for all CHORAS workshop playbooks. On SRC, component parameters with the
+# same names override them. SRC passes every parameter as a string without quotes,
+# so lists are comma-separated.
+
+# CHORAS commit or tag. Default: the dev commit of the local end-to-end test (2026-11-19).
+choras_version: 218636b46269ab463cac6f4cb2e9db7feba7b837
+choras_repo: https://github.com/choras-org/CHORAS.git
+
+# Logins, one CHORAS instance each. Only lowercase letters, digits, - and _.
+choras_participants: user01,user02
+# Compose services from CHORAS's docker-compose.yml (profile sim_method) to build.
+choras_methods: de-method
+
+# Limits per simulation container (backend #153) and per backend container
+# (meshing and the geometry repair run in the backend, outside the simulation limits).
+choras_sim_cpus: "2"
+choras_sim_mem_limit: 4g
+choras_backend_cpus: "2"
+choras_backend_mem_limit: 4g
+choras_web_concurrency: "2"
+
+# Participant N (1-based, in list order) gets backend port choras_base_port + N.
+choras_base_port: 8100
+# Seconds between starting two instances; each first start seeds the example
+# projects and runs the geometry repair on them.
+choras_start_pause: 30
+
+# Absolute, because the backend puts it into model URLs (PUBLIC_API_URL).
+choras_public_url: "https://{{ ansible_facts['fqdn'] }}"
+
+choras_src_dir: /opt/choras/src
+choras_users_dir: /opt/choras/users
+choras_credentials_file: /root/choras_credentials.txt
+choras_web_root: /var/www/choras

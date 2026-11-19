@@ -1,0 +1,58 @@
+# A fresh clone, not a copy of a working tree: the backend builds with the CHORAS
+# root as context and there's no .dockerignore there.
+- name: Clone CHORAS at the pinned version
+  ansible.builtin.git:
+    repo: "{{ choras_repo }}"
+    dest: "{{ choras_src_dir }}"
+    version: "{{ choras_version }}"
+    recursive: true
+    force: true
+
+- name: Build the backend image
+  ansible.builtin.command:
+    argv: [docker, build, -f, backend/Dockerfile, -t, "choras-backend:{{ choras_version }}", .]
+    chdir: "{{ choras_src_dir }}"
+  changed_when: false
+
+- name: Build the simulation images
+  ansible.builtin.command:
+    argv: "{{ ['docker', 'compose', '--profile', 'sim_method', 'build'] + choras_method_list }}"
+    chdir: "{{ choras_src_dir }}"
+  changed_when: false
+
+- name: Build the frontend image
+  ansible.builtin.command:
+    argv: [docker, build, --build-arg, VITE_API_URL=/api, -t, "choras-frontend:{{ choras_version }}", frontend-v2]
+    chdir: "{{ choras_src_dir }}"
+  changed_when: false
+
+# The image serves the static build with its own Nginx; SRC-Nginx serves the copy instead.
+- name: Remove a leftover copy container
+  ansible.builtin.command: docker rm -f choras-frontend-copy
+  changed_when: false
+
+- name: Create a container to copy the frontend build from
+  ansible.builtin.command:
+    argv: [docker, create, --name, choras-frontend-copy, "choras-frontend:{{ choras_version }}"]
+  changed_when: false
+
+- name: Remove the previous frontend build
+  ansible.builtin.file:
+    path: "{{ choras_web_root }}"
+    state: absent
+
+- name: Copy the frontend build out of the image
+  ansible.builtin.command:
+    argv: [docker, cp, "choras-frontend-copy:/usr/share/nginx/html", "{{ choras_web_root }}"]
+  changed_when: true
+
+- name: Remove the copy container
+  ansible.builtin.command: docker rm -f choras-frontend-copy
+  changed_when: false
+
+- name: Let Nginx read the frontend build
+  ansible.builtin.file:
+    path: "{{ choras_web_root }}"
+    state: directory
+    recurse: true
+    mode: u=rwX,go=rX

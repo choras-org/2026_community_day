@@ -1,0 +1,40 @@
+- name: Create a directory per participant
+  ansible.builtin.file:
+    path: "{{ choras_users_dir }}/{{ item }}/uploads"
+    state: directory
+    mode: "0755"
+  loop: "{{ choras_participant_list }}"
+
+# Generated on the workspace and kept across runs, so re-running the playbook
+# doesn't lock instances out of their own database.
+- name: Generate secrets per instance
+  ansible.builtin.shell: |
+    umask 077
+    {
+      echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+      echo "SECRET_KEY=$(openssl rand -hex 32)"
+      echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+    } > secrets.env
+  args:
+    chdir: "{{ choras_users_dir }}/{{ item }}"
+    creates: secrets.env
+  loop: "{{ choras_participant_list }}"
+
+- name: Write the compose file per participant
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ choras_users_dir }}/{{ item }}/compose.yml"
+    mode: "0644"
+  loop: "{{ choras_participant_list }}"
+  loop_control:
+    index_var: choras_index
+
+- name: Start the instances
+  ansible.builtin.command:
+    argv: [docker, compose, -p, "choras_{{ item }}", -f, compose.yml, up, -d]
+    chdir: "{{ choras_users_dir }}/{{ item }}"
+  register: choras_up
+  changed_when: "'Started' in choras_up.stderr or 'Recreated' in choras_up.stderr"
+  loop: "{{ choras_participant_list }}"
+  loop_control:
+    pause: "{{ choras_start_pause | int }}"

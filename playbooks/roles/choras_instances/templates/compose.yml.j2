@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+# CHORAS instance of {{ item }}: only the backend is published, on localhost.
+services:
+  db_service:
+    image: postgres:13
+    # Later files win: secrets.env replaces the repo's default password.
+    env_file: [ "{{ choras_src_dir }}/.env.db", secrets.env ]
+    volumes: [ "postgresql_data:/var/lib/postgresql/data/" ]
+    restart: unless-stopped
+
+  backend:
+    image: "choras-backend:{{ choras_version }}"
+    ports: [ "127.0.0.1:{{ choras_base_port | int + choras_index + 1 }}:5001" ]
+    env_file: [ "{{ choras_src_dir }}/.env.api", secrets.env ]
+    environment:
+      CHORAS_INSTANCE_NAME: "{{ item }}"
+      CHORAS_SIM_CPUS: "{{ choras_sim_cpus }}"
+      CHORAS_SIM_MEM_LIMIT: "{{ choras_sim_mem_limit }}"
+      WEB_CONCURRENCY: "{{ choras_web_concurrency }}"
+      PUBLIC_API_URL: "{{ choras_public_url }}/api"
+    cpus: {{ choras_backend_cpus }}
+    mem_limit: {{ choras_backend_mem_limit }}
+    depends_on: [ db_service ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./uploads:/app/uploads
+      - "{{ choras_src_dir }}/simulation-backend:/app/simulation-backend:ro"
+    restart: unless-stopped
+
+volumes:
+  postgresql_data:

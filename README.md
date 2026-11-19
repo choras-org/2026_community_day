@@ -19,7 +19,7 @@ How it works:
 | Path | What it is |
 |---|---|
 | `playbooks/choras_workshop.yml` | The SRC component: build, instances, Nginx config |
-| `playbooks/local_prepare.yml` | Only outside SRC: Docker, git and an Nginx stand-in for SRC-Nginx |
+| `playbooks/local_prepare.yml` | Only outside SRC: an Nginx stand-in for SRC-Nginx |
 | `playbooks/group_vars/all.yml` | Defaults for all parameters |
 | `playbooks/roles/choras_build` | Clones CHORAS at `choras_version`, builds the images, copies the frontend build to `/var/www/choras` |
 | `playbooks/roles/choras_instances` | Per participant: secrets, compose file, start |
@@ -42,13 +42,20 @@ Defaults are in `playbooks/group_vars/all.yml`.
 | `choras_backend_cpus` / `choras_backend_mem_limit` | `2` / `4g` | Limits per backend container (meshing, geometry repair) |
 | `choras_web_concurrency` | `2` | Gunicorn workers per backend |
 | `choras_start_pause` | `30` | Seconds between starting two instances |
-| `choras_public_url` | `https://<fqdn>` | Public URL; the backends get `<url>/api` as `PUBLIC_API_URL` |
+| `choras_public_url` | `https://<fqdn>` | Public URL; the backends get `<url>/api` as `PUBLIC_API_URL`. Don't declare it as an SRC parameter: the default is computed on the workspace. |
 
 ## On SRC
 
-Catalog item order: SRC-OS, SRC-CO, SRC-Nginx, SRC-External, Docker, then this
-repository's `playbooks/choras_workshop.yml` as an Ansible component. The playbook
-stops early if `/etc/nginx/app-location-conf.d` (SRC-Nginx) or Docker is missing.
+Component: script type "Ansible Playbook", repository
+`https://github.com/choras-org/2026_community_day.git`, path
+`playbooks/choras_workshop.yml`, tag a branch or tag of this repository (SRC doesn't
+accept commits).
+
+Catalog item order: SRC-OS, SRC-CO, SRC-Nginx, SRC-External plugin, then this
+component. Use Ubuntu 22.04: SURF doesn't support SRC-External on Ubuntu 24 yet. The
+playbook installs Docker (Ubuntu's `docker.io` and `docker-compose-v2`) and git if
+they're missing, and stops early if `/etc/nginx/app-location-conf.d` (SRC-Nginx) is
+missing.
 
 After the workspace is up, the logins are in `/root/choras_credentials.txt` (one
 `user password` line per participant), readable only by root. The workshop URL is

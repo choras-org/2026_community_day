@@ -1,14 +1,15 @@
 # For a plain Ubuntu machine instead of SRC (test VM, local-network fallback):
-# installs what the SRC catalog item otherwise provides. Run before choras_workshop.yml.
+# installs what SRC-Nginx otherwise provides. Run before choras_workshop.yml,
+# which installs Docker and git itself.
 - name: Prepare a non-SRC machine for the CHORAS workshop
   hosts: localhost
   gather_facts: true
 
   # pre_tasks, because roles run before tasks and the role needs nginx.
   pre_tasks:
-    - name: Install Docker, git and nginx
+    - name: Install nginx
       ansible.builtin.apt:
-        name: [docker.io, docker-compose-v2, git, nginx, openssl]
+        name: [nginx, openssl]
         update_cache: true
 
   roles:

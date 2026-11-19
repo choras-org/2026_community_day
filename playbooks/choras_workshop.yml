@@ -1,6 +1,6 @@
 # SRC component: one CHORAS instance per participant behind SRC-Nginx.
-# Catalog item order: SRC-OS, SRC-CO, SRC-Nginx, SRC-External, Docker, this playbook.
-# Outside SRC, run local_prepare.yml first (Docker, git, an Nginx stand-in).
+# Catalog item order: SRC-OS, SRC-CO, SRC-Nginx, SRC-External plugin, this playbook.
+# Outside SRC, run local_prepare.yml first (an Nginx stand-in for SRC-Nginx).
 - name: CHORAS workshop
   hosts: localhost
   gather_facts: true
@@ -20,9 +20,29 @@
           - choras_participant_list | unique | length == choras_participant_list | length
         fail_msg: "choras_participants must be unique names of lowercase letters, digits, - and _: {{ choras_participants }}"
 
-    - name: Check that Docker with the compose plugin is installed
+    - name: Install git
+      ansible.builtin.apt:
+        name: git
+        update_cache: true
+
+    - name: Check whether Docker with the compose plugin is installed
       ansible.builtin.command: docker compose version
+      register: choras_docker
       changed_when: false
+      failed_when: false
+
+    # Only when missing: Ubuntu's docker.io conflicts with Docker's own docker-ce,
+    # which an image or another component may already have installed.
+    - name: Install Docker from the Ubuntu packages
+      ansible.builtin.apt:
+        name: [docker.io, docker-compose-v2]
+      when: choras_docker.rc != 0
+
+    - name: Start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
 
     - name: Check that the SRC-Nginx include directory exists
       ansible.builtin.stat:

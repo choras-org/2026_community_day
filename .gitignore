@@ -1,0 +1,5 @@
+.DS_Store
+
+# Login cards and credential copies contain passwords.
+*.pdf
+credentials.txt

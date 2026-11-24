@@ -1,6 +1,6 @@
 # Operations scripts
 
-Scripts for running the workshop workspace. They work on the instances the
+Scripts for running the workshop workspace and printing the login cards. They work on the instances the
 playbook created (`/opt/choras/users/<login>`, one Docker Compose project
 `choras_<login>` each) and run on the workspace itself:
 
@@ -80,3 +80,39 @@ sudo ~/choras-playbook/scripts/reset_user.sh --yes user16     # no question
 Everything of that instance is gone afterwards; run `export_results.sh` first if
 the data matters. Other instances aren't touched (simulation containers are
 matched by `choras-<login>-`, so resetting `user16` leaves `user160` alone).
+
+## credentials_pdf.py
+
+Makes an A4 PDF of login cards for printing: 10 cards per page (2 columns × 5
+rows) with the workspace URL, login and password (monospaced) and the note that
+only one person per group logs in. Dashed cut lines run from edge to edge, so
+the cards can be cut apart with scissors in straight lines. Python standard
+library only.
+
+The credentials file belongs to root. Either generate the PDF on the workspace
+and copy it to your own machine:
+
+```bash
+# on the workspace
+sudo cat /root/choras_credentials.txt | python3 ~/choras-playbook/scripts/credentials_pdf.py - ~/logins.pdf
+# on your own machine
+scp '<sram-user>@<workspace>:logins.pdf' ~/Desktop/
+```
+
+or copy the credentials and generate the PDF locally, then delete the
+plaintext copies:
+
+```bash
+# on the workspace
+sudo cat /root/choras_credentials.txt > ~/credentials.txt && chmod 600 ~/credentials.txt
+# on your own machine, in this repo
+scp '<sram-user>@<workspace>:credentials.txt' /tmp/credentials.txt
+python3 scripts/credentials_pdf.py /tmp/credentials.txt ~/Desktop/logins.pdf
+rm /tmp/credentials.txt
+ssh '<sram-user>@<workspace>' 'rm ~/credentials.txt'
+```
+
+`--users user01,user02` prints only some logins (e.g. the groups without the
+spares); `--title`, `--url` and `--note` change the texts. `python3
+credentials_pdf.py --selftest` checks the script. The PDF contains the
+passwords, so treat it like the printed cards.

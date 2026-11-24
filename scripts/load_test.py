@@ -19,6 +19,7 @@ stops early with a summary so far. Standard library only.
     python3 load_test.py --set-method misuka  # switch each first simulation to misuka first
     python3 load_test.py --set-method random  # a random workshop method for every run
     python3 load_test.py --set-method misuka,sparrowpy   # random from this list for every run
+    python3 load_test.py --set-method random --setting MoDART:ppsm=5 --setting MoDART:rays=200
     python3 load_test.py --material wood      # all surfaces to the first material matching "wood"
     python3 load_test.py --obj room.obj --source 2,2,1.5 --receiver 4,3,1.5   # upload a model first
     python3 load_test.py --dry-run            # only show what would start
@@ -155,17 +156,25 @@ def pick_simulation(port, method):
     return None
 
 
-def set_method(port, sim, name):
-    """Switch a simulation to a method with its default settings, like the frontend's method dropdown."""
+def set_method(port, sim, name, overrides=None):
+    """Switch a simulation to a method with its default settings, like the frontend's method dropdown.
+
+    overrides ({method in lower case: {setting id: value}}) replaces some of the defaults."""
     types = [m["simulationType"] for m in call(port, "/simulation_settings")]
     match = [t for t in types if t.lower() == name.lower()]
     if not match:
         raise ValueError(f"unknown method {name}, available: {', '.join(types)}")
     options = call(port, f"/simulation_settings/{match[0]}")["options"]
+    settings = {o["id"]: o["default"] for o in options}
+    extra = (overrides or {}).get(match[0].lower(), {})
+    unknown = set(extra) - set(settings)
+    if unknown:
+        raise ValueError(f"{match[0]} has no setting {', '.join(sorted(unknown))}, available: {', '.join(settings)}")
+    settings.update(extra)
     body = {
         "modelId": sim["modelId"], "name": sim["name"], "status": sim["status"],
         "hasBeenEdited": sim.get("hasBeenEdited") or False, "simulationMethod": match[0],
-        "solverSettings": {"simulationSettings": {o["id"]: o["default"] for o in options}},
+        "solverSettings": {"simulationSettings": settings},
     }
     if sim.get("resourceType"):
         body["resourceType"] = sim["resourceType"]
@@ -248,7 +257,7 @@ def run_user(user, port, sim, start, args, running, result):
         nonlocal sim
         if len(args.methods) > 1:  # a group trying another method before this run
             try:
-                sim = set_method(port, sim, random.choice(args.methods))
+                sim = set_method(port, sim, random.choice(args.methods), args.settings)
             except Exception as exc:
                 return (f"Failed: set method: {exc}", 0.0, None)
         return run_one(user, port, sim, args.timeout, args.poll, running)
@@ -269,6 +278,8 @@ def main(argv=None):
     ap.add_argument("--method", help="only simulations with this method, e.g. DE, sparrowpy")
     ap.add_argument("--set-method", help="method for the picked simulations, e.g. misuka; several "
                                          "comma-separated or 'random' (workshop methods): a random one per run")
+    ap.add_argument("--setting", action="append", default=[],
+                    help="method:id=value instead of a default after --set-method, e.g. MoDART:ppsm=5; repeatable")
     ap.add_argument("--material", help="assign the first material matching this name to all surfaces, e.g. wood")
     ap.add_argument("--obj", help="upload this model into every instance first and simulate it")
     ap.add_argument("--source", help="x,y,z of the source in the --obj model")
@@ -293,6 +304,17 @@ def main(argv=None):
         args.methods = WORKSHOP_METHODS
     else:
         args.methods = [m.strip() for m in (args.set_method or "").split(",") if m.strip()]
+    args.settings = {}
+    for item in args.setting:
+        key, sep, value = item.partition("=")
+        method, colon, sid = key.partition(":")
+        if not (sep and colon and method and sid):
+            ap.error(f"--setting {item}: expected method:id=value")
+        try:
+            value = json.loads(value)
+        except ValueError:
+            pass  # a text value, e.g. a comma-separated list
+        args.settings.setdefault(method.lower(), {})[sid] = value
     if args.obj:
         if not (args.source and args.receiver):
             ap.error("--obj needs --source and --receiver")
@@ -331,7 +353,7 @@ def main(argv=None):
             continue
         if args.methods and not args.dry_run:
             try:
-                sim = set_method(ports[user], sim, random.choice(args.methods))
+                sim = set_method(ports[user], sim, random.choice(args.methods), args.settings)
             except Exception as exc:
                 print(f"{user} :{ports[user]}  could not set method: {exc}")
                 continue
@@ -459,7 +481,7 @@ def selftest():
                 return self.reply({"id": 7, "simulationMethod": Stub.method, "name": "Example",
                                    "layerIdByMaterialId": Stub.layers})
             assert body["simulationMethod"] in ("misuka", "DE") and body["modelId"] in (3, 30), body
-            assert body["solverSettings"] == {"simulationSettings": {"rays": 1000}}, body
+            Stub.settings = body["solverSettings"]["simulationSettings"]
             Stub.method = body["simulationMethod"]
             Stub.switches.append(body["simulationMethod"])
             self.reply({"id": 7, "modelId": 3, "simulationMethod": body["simulationMethod"], "name": "Example",
@@ -508,6 +530,12 @@ def selftest():
         assert rc == 0, rc
         rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--set-method", "MISUKA"])
         assert rc == 0 and Stub.method == "misuka", (rc, Stub.method)
+        assert Stub.settings == {"rays": 1000}, Stub.settings
+        rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--set-method", "misuka",
+                   "--setting", "MISUKA:rays=5", "--setting", "DE:rays=7"])
+        assert rc == 0 and Stub.settings == {"rays": 5}, (rc, Stub.settings)
+        assert main(["--users", "user01", "--map-file", f.name, "--burst", "--set-method", "misuka",
+                     "--setting", "misuka:nope=1"]) == 1
         assert main(["--users", "user01", "--map-file", f.name, "--burst", "--set-method", "nope"]) == 1
         rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--material", "WOOD"])
         assert rc == 0 and Stub.layers == {"a": 9, "b": 9}, (rc, Stub.layers)

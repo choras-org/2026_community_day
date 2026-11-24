@@ -31,6 +31,10 @@ standard library only.
   a group first switches to a random method from the list, like groups trying
   different methods; `random` means DE, misuka, MoD-ART, sparrowpy and
   pyroomacoustics. The summary then also lists runs and durations per method.
+- **`--setting MoDART:ppsm=5`** (repeatable): uses that value instead of the
+  method's default whenever the test switches to that method with `--set-method`.
+  The value is read as JSON where possible (`5`, `0.5`, `true`), otherwise as text.
+  An unknown setting name stops that group with a list of the method's settings.
 - **`--material wood`:** assigns the first material whose name contains "wood" to all surfaces of the simulation. The example uses "Acoustic plaster 68 mm thick", which absorbs a lot; less absorption means longer decays and longer runs.
 - **`--obj room.obj --source x,y,z --receiver x,y,z`:** uploads that model into
   every instance first, the same way the frontend does (project "Load test",
@@ -52,6 +56,7 @@ python3 ~/choras-playbook/scripts/load_test.py --dry-run                  # what
 python3 ~/choras-playbook/scripts/load_test.py                            # 15 groups, 10 min
 python3 ~/choras-playbook/scripts/load_test.py --set-method misuka --burst
 python3 ~/choras-playbook/scripts/load_test.py --set-method random --material wood
+python3 ~/choras-playbook/scripts/load_test.py --set-method random --setting MoDART:ppsm=5 --setting MoDART:rays=200
 python3 ~/choras-playbook/scripts/load_test.py --users user16,user17,user18,user19,user20
 python3 ~/choras-playbook/scripts/load_test.py --obj ~/choras-playbook/scripts/models/Atlas8340_empty.obj \
     --source 4.5,3,1.5 --receiver 4.5,10,1.2 --set-method misuka --material wood

@@ -7,13 +7,13 @@ choras_version: v0.3.0
 choras_repo: https://github.com/choras-org/CHORAS.git
 
 # Logins, one CHORAS instance each. Only lowercase letters, digits, - and _.
-choras_participants: user01,user02
+choras_participants: user01,user02,user03,user04,user05,user06,user07,user08,user09,user10,user11,user12,user13,user14,user15,user16,user17,user18,user19,user20
 # Compose services from CHORAS's docker-compose.yml (profile sim_method) to build.
-choras_methods: de-method,misuka-method,modart-method,sparrowpy-method,pyroomacoustics-method
+choras_methods: de-method,misuka-method,modart-method,sparrowpy-method,pyroomacoustics-method,dg-method
 
 # Limits per simulation container (backend #153) and per backend container
 # (meshing and the geometry repair run in the backend, outside the simulation limits).
-choras_sim_cpus: "2"
+choras_sim_cpus: "4"
 choras_sim_mem_limit: 4g
 choras_backend_cpus: "2"
 choras_backend_mem_limit: 4g

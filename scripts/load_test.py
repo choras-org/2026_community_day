@@ -17,6 +17,7 @@ stops early with a summary so far. Standard library only.
     python3 load_test.py --burst              # all at once, one run each
     python3 load_test.py --users user01,user02 --method sparrowpy
     python3 load_test.py --set-method misuka  # switch each first simulation to misuka first
+    python3 load_test.py --material wood      # all surfaces to the first material matching "wood"
     python3 load_test.py --dry-run            # only show what would start
     python3 load_test.py --selftest           # check the script against a stub backend
 
@@ -24,7 +25,9 @@ stops early with a summary so far. Standard library only.
 switches each picked simulation to a method with that method's default settings,
 as the frontend does on a method change (the example project in every instance
 has a DE simulation, which runs on one core; misuka, sparrowpy and MoD-ART use
-the full CPU limit).
+the full CPU limit). --material assigns one material to all surfaces of the
+picked simulation (the example uses "Acoustic plaster 68 mm thick", which is
+very absorbent; less absorption means longer decays and longer runs).
 Run `sudo docker stats` alongside to watch CPU and memory.
 """
 import argparse
@@ -89,6 +92,22 @@ def set_method(port, sim, name):
 
 def log(msg):
     print(f"{time.strftime('%H:%M:%S')}  {msg}", flush=True)
+
+
+def set_material(port, sim, name):
+    """Assign the first material whose name contains `name` to every surface of the simulation."""
+    materials = call(port, "/materials")
+    match = [m for m in materials if name.lower() in m["name"].lower()]
+    if not match:
+        raise ValueError(f"no material matching {name!r}, available: {'; '.join(m['name'] for m in materials)}")
+    layers = sim.get("layerIdByMaterialId") or {}
+    if not layers:
+        raise ValueError("simulation has no surfaces with materials to change")
+    body = {"modelId": sim["modelId"], "name": sim["name"], "status": sim["status"],
+            "hasBeenEdited": True, "layerIdByMaterialId": {layer: match[0]["id"] for layer in layers}}
+    updated = call(port, f"/simulations/{sim['id']}", body, method="PUT")
+    print(f"  {len(layers)} surfaces -> {match[0]['name']}")
+    return updated
 
 
 class Running:
@@ -157,6 +176,7 @@ def main(argv=None):
     ap.add_argument("--users", default=",".join(f"user{i:02d}" for i in range(1, 16)))
     ap.add_argument("--method", help="only simulations with this method, e.g. DE, sparrowpy")
     ap.add_argument("--set-method", help="switch each picked simulation to this method first, e.g. misuka")
+    ap.add_argument("--material", help="assign the first material matching this name to all surfaces, e.g. wood")
     ap.add_argument("--map-file", default=USERS_MAP)
     ap.add_argument("--base-port", type=int, default=8100)
     ap.add_argument("--timeout", type=float, default=900, help="seconds per run before it counts as Timeout")
@@ -190,6 +210,12 @@ def main(argv=None):
                 sim = set_method(ports[user], sim, args.set_method)
             except Exception as exc:
                 print(f"{user} :{ports[user]}  could not set method: {exc}")
+                continue
+        if args.material and not args.dry_run:
+            try:
+                sim = set_material(ports[user], sim, args.material)
+            except Exception as exc:
+                print(f"{user} :{ports[user]}  could not set material: {exc}")
                 continue
         plan[user] = sim
         print(f"{user} :{ports[user]}  simulation {sim['id']} ({sim.get('simulationMethod')}) {sim.get('name', '')}")
@@ -241,6 +267,7 @@ def selftest():
     class Stub(http.server.BaseHTTPRequestHandler):
         polls = {}
         method = "DE"
+        layers = {"a": 4, "b": 4}
 
         def log_message(self, *a):
             pass
@@ -255,7 +282,10 @@ def selftest():
         def do_GET(self):
             if self.path == "/projects/simulations":
                 return self.reply([{"simulations": [{"id": 7, "modelId": 3, "simulationMethod": Stub.method,
-                                                     "name": "Example", "status": "Completed"}]}])
+                                                     "name": "Example", "status": "Completed",
+                                                     "layerIdByMaterialId": Stub.layers}]}])
+            if self.path == "/materials":
+                return self.reply([{"id": 4, "name": "Acoustic plaster 68 mm thick"}, {"id": 9, "name": "Wood"}])
             if self.path == "/simulation_settings":
                 return self.reply([{"simulationType": "DE"}, {"simulationType": "misuka"}])
             if self.path == "/simulation_settings/misuka":
@@ -266,6 +296,11 @@ def selftest():
 
         def do_PUT(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if "layerIdByMaterialId" in body:
+                assert body["layerIdByMaterialId"] == {"a": 9, "b": 9}, body
+                Stub.layers = body["layerIdByMaterialId"]
+                return self.reply({"id": 7, "simulationMethod": Stub.method, "name": "Example",
+                                   "layerIdByMaterialId": Stub.layers})
             assert body["simulationMethod"] == "misuka" and body["modelId"] == 3, body
             assert body["solverSettings"] == {"simulationSettings": {"rays": 1000}}, body
             Stub.method = "misuka"
@@ -299,6 +334,9 @@ def selftest():
         rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--set-method", "MISUKA"])
         assert rc == 0 and Stub.method == "misuka", (rc, Stub.method)
         assert main(["--users", "user01", "--map-file", f.name, "--burst", "--set-method", "nope"]) == 1
+        rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--material", "WOOD"])
+        assert rc == 0 and Stub.layers == {"a": 9, "b": 9}, (rc, Stub.layers)
+        assert main(["--users", "user01", "--map-file", f.name, "--burst", "--material", "marble"]) == 1
     finally:
         os.unlink(f.name)
         for s in servers:

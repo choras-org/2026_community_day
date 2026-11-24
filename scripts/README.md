@@ -27,6 +27,7 @@ standard library only.
   that method with its default settings, like the frontend's method dropdown.
   DE runs on one core; misuka, sparrowpy and MoD-ART use the full CPU limit, so
   use one of those to test the CPU load.
+- **`--material wood`:** assigns the first material whose name contains "wood" to all surfaces of the simulation. The example uses "Acoustic plaster 68 mm thick", which absorbs a lot; less absorption means longer decays and longer runs.
 - **`--users`:** the logins to use (default `user01`–`user15`).
 
 ```bash

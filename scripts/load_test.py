@@ -11,15 +11,19 @@ no login), so it loads the backends and the simulation containers, not Nginx.
 Polls each run's status once per second, like the frontend does. Standard
 library only.
 
-    python3 load_test.py                      # user01-user15, 20 min, think 30-180 s
+    python3 load_test.py                      # user01-user15, 10 min, think 30-180 s
     python3 load_test.py --duration 45 --think 60,300
     python3 load_test.py --burst              # all at once, one run each
     python3 load_test.py --users user01,user02 --method sparrowpy
+    python3 load_test.py --set-method misuka  # switch each first simulation to misuka first
     python3 load_test.py --dry-run            # only show what would start
     python3 load_test.py --selftest           # check the script against a stub backend
 
---method only picks simulations that already use that method; set them up in
-the frontend first (the example project in every instance has a DE simulation).
+--method only picks simulations that already use that method. --set-method
+switches each picked simulation to a method with that method's default settings,
+as the frontend does on a method change (the example project in every instance
+has a DE simulation, which runs on one core; misuka, sparrowpy and MoD-ART use
+the full CPU limit).
 Run `sudo docker stats` alongside to watch CPU and memory.
 """
 import argparse
@@ -45,11 +49,12 @@ def backend_ports(users, map_file, base_port):
     return {u: ports.get(u, base_port + int(re.sub(r"\D", "", u) or 0)) for u in users}
 
 
-def call(port, path, body=None):
+def call(port, path, body=None, method=None):
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
         data=None if body is None else json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
+        method=method,
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
@@ -62,6 +67,23 @@ def pick_simulation(port, method):
             if method is None or (sim.get("simulationMethod") or "").lower() == method.lower():
                 return sim
     return None
+
+
+def set_method(port, sim, name):
+    """Switch a simulation to a method with its default settings, like the frontend's method dropdown."""
+    types = [m["simulationType"] for m in call(port, "/simulation_settings")]
+    match = [t for t in types if t.lower() == name.lower()]
+    if not match:
+        raise ValueError(f"unknown method {name}, available: {', '.join(types)}")
+    options = call(port, f"/simulation_settings/{match[0]}")["options"]
+    body = {
+        "modelId": sim["modelId"], "name": sim["name"], "status": sim["status"],
+        "hasBeenEdited": sim.get("hasBeenEdited") or False, "simulationMethod": match[0],
+        "solverSettings": {"simulationSettings": {o["id"]: o["default"] for o in options}},
+    }
+    if sim.get("resourceType"):
+        body["resourceType"] = sim["resourceType"]
+    return call(port, f"/simulations/{sim['id']}", body, method="PUT")
 
 
 class Running:
@@ -110,12 +132,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--users", default=",".join(f"user{i:02d}" for i in range(1, 16)))
     ap.add_argument("--method", help="only simulations with this method, e.g. DE, sparrowpy")
+    ap.add_argument("--set-method", help="switch each picked simulation to this method first, e.g. misuka")
     ap.add_argument("--map-file", default=USERS_MAP)
     ap.add_argument("--base-port", type=int, default=8100)
     ap.add_argument("--timeout", type=float, default=1800, help="seconds per run")
     ap.add_argument("--poll", type=float, default=1.0, help="seconds between status requests")
     ap.add_argument("--burst", action="store_true", help="all at once, one run each")
-    ap.add_argument("--duration", type=float, default=20, help="minutes (not with --burst)")
+    ap.add_argument("--duration", type=float, default=10, help="minutes (not with --burst)")
     ap.add_argument("--think", default="30,180", help="min,max seconds between runs of a group")
     ap.add_argument("--stagger", type=float, default=60, help="seconds over which groups start")
     ap.add_argument("--dry-run", action="store_true")
@@ -137,6 +160,12 @@ def main(argv=None):
         if sim is None:
             print(f"{user} :{ports[user]}  no simulation" + (f" with method {args.method}" if args.method else ""))
             continue
+        if args.set_method and not args.dry_run:
+            try:
+                sim = set_method(ports[user], sim, args.set_method)
+            except Exception as exc:
+                print(f"{user} :{ports[user]}  could not set method: {exc}")
+                continue
         plan[user] = sim
         print(f"{user} :{ports[user]}  simulation {sim['id']} ({sim.get('simulationMethod')}) {sim.get('name', '')}")
     if args.dry_run or not plan:
@@ -178,6 +207,7 @@ def selftest():
 
     class Stub(http.server.BaseHTTPRequestHandler):
         polls = {}
+        method = "DE"
 
         def log_message(self, *a):
             pass
@@ -191,10 +221,22 @@ def selftest():
 
         def do_GET(self):
             if self.path == "/projects/simulations":
-                return self.reply([{"simulations": [{"id": 7, "simulationMethod": "DE", "name": "Example"}]}])
+                return self.reply([{"simulations": [{"id": 7, "modelId": 3, "simulationMethod": Stub.method,
+                                                     "name": "Example", "status": "Completed"}]}])
+            if self.path == "/simulation_settings":
+                return self.reply([{"simulationType": "DE"}, {"simulationType": "misuka"}])
+            if self.path == "/simulation_settings/misuka":
+                return self.reply({"options": [{"id": "rays", "default": 1000}]})
             run_id = int(self.path.split("/")[3])
             Stub.polls[run_id] = Stub.polls.get(run_id, 0) + 1
             self.reply({"id": run_id, "status": "Completed" if Stub.polls[run_id] >= 2 else "InProgress"})
+
+        def do_PUT(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            assert body["simulationMethod"] == "misuka" and body["modelId"] == 3, body
+            assert body["solverSettings"] == {"simulationSettings": {"rays": 1000}}, body
+            Stub.method = "misuka"
+            self.reply({"id": 7, "simulationMethod": "misuka", "name": "Example"})
 
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -221,6 +263,9 @@ def selftest():
         rc = main(["--users", "user01,user02", "--map-file", f.name, "--poll", "0.05",
                    "--duration", "0.01", "--think", "0,0", "--stagger", "0"])
         assert rc == 0, rc
+        rc = main(["--users", "user01", "--map-file", f.name, "--poll", "0.05", "--burst", "--set-method", "MISUKA"])
+        assert rc == 0 and Stub.method == "misuka", (rc, Stub.method)
+        assert main(["--users", "user01", "--map-file", f.name, "--burst", "--set-method", "nope"]) == 1
     finally:
         os.unlink(f.name)
         for s in servers:

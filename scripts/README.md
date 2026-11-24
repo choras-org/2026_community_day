@@ -27,14 +27,32 @@ standard library only.
   that method with its default settings, like the frontend's method dropdown.
   DE runs on one core; misuka, sparrowpy and MoD-ART use the full CPU limit, so
   use one of those to test the CPU load.
+- **`--set-method random`** (or a list such as `misuka,sparrowpy`): every run of
+  a group first switches to a random method from the list, like groups trying
+  different methods; `random` means DE, misuka, MoD-ART, sparrowpy and
+  pyroomacoustics. The summary then also lists runs and durations per method.
 - **`--material wood`:** assigns the first material whose name contains "wood" to all surfaces of the simulation. The example uses "Acoustic plaster 68 mm thick", which absorbs a lot; less absorption means longer decays and longer runs.
+- **`--obj room.obj --source x,y,z --receiver x,y,z`:** uploads that model into
+  every instance first, the same way the frontend does (project "Load test",
+  upload, geometry check, model, waiting for the geometry pipeline, mesh), and
+  creates a DE simulation on it with one source, one receiver and "Acoustic
+  plaster" on all surfaces. `--set-method` and `--material` then apply to it. The
+  setup runs for all instances in parallel; `--setup-timeout` (900 s) limits the
+  wait for the geometry pipeline. The model and project stay in the instances.
+  `models/Atlas8340_empty.obj` is the empty Atlas 8.340 lecture hall (TU/e).
+  CHORAS turns the OBJ's Y-up into Z-up (CHORAS X = OBJ x, Y = −OBJ z, Z = OBJ y),
+  so in CHORAS coordinates the hall is 8.94 × 17.24 m with the floor at Z = 0 and
+  6.2 m walls; source 4.5,3,1.5 and receiver 4.5,10,1.2 are inside it.
 - **`--users`:** the logins to use (default `user01`–`user15`).
 
 ```bash
 python3 ~/choras-playbook/scripts/load_test.py --dry-run                  # what would start
 python3 ~/choras-playbook/scripts/load_test.py                            # 15 groups, 10 min
 python3 ~/choras-playbook/scripts/load_test.py --set-method misuka --burst
+python3 ~/choras-playbook/scripts/load_test.py --set-method random --material wood
 python3 ~/choras-playbook/scripts/load_test.py --users user16,user17,user18,user19,user20
+python3 ~/choras-playbook/scripts/load_test.py --obj ~/choras-playbook/scripts/models/Atlas8340_empty.obj \
+    --source 4.5,3,1.5 --receiver 4.5,10,1.2 --set-method misuka --material wood
 python3 ~/choras-playbook/scripts/load_test.py --selftest                 # check against stub backends
 ```
 

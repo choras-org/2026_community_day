@@ -1,6 +1,6 @@
 # Operations scripts
 
-Scripts for running the workshop workspace and printing the login cards. They work on the instances the
+Scripts for running and watching the workshop workspace and printing the login cards. They work on the instances the
 playbook created (`/opt/choras/users/<login>`, one Docker Compose project
 `choras_<login>` each) and run on the workspace itself:
 
@@ -135,3 +135,16 @@ ssh '<sram-user>@<workspace>' 'rm ~/credentials.txt'
 spares); `--title`, `--url` and `--note` change the texts. `python3
 credentials_pdf.py --selftest` checks the script. The PDF contains the
 passwords, so treat it like the printed cards.
+
+## status.sh
+
+One snapshot of the server: load average against the number of cores (with a
+warning above it), memory, disk use of `/`, instances whose backend or database
+isn't running, and the simulations running right now with their CPU and memory.
+
+```bash
+sudo ~/choras-playbook/scripts/status.sh
+watch -n 10 sudo ~/choras-playbook/scripts/status.sh    # refresh every 10 s, Ctrl-C to stop
+```
+
+A simulation can use up to `choras_sim_cpus` × 100 % CPU (400 % with 4 cores).

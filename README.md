@@ -8,7 +8,7 @@ How it works:
 
 - One shared static frontend, built with `VITE_API_URL=/api`, served by Nginx.
 - Per participant a compose project with Postgres and a backend, published only on
-  `127.0.0.1:<port>`. Simulation images are built once and shared.
+  `127.0.0.1:<port>`. Simulation images are pulled from GHCR once and shared.
 - Nginx (basic auth) maps each login to its own backend: `/api/` goes to
   `127.0.0.1:<port>` of the logged-in user, other logins get a 403.
 - Requests are rate-limited per login name (10/s, bursts of 100) against password
@@ -39,6 +39,8 @@ Defaults are in `playbooks/group_vars/all.yml`.
 | `choras_version` | `v0.3.0` (CHORAS release, commit `82ee838`) | CHORAS commit or tag |
 | `choras_participants` | `user01`–`user20` (15 groups plus 5 spares) | Logins, one instance each, in this order (ports 8101, 8102, …) |
 | `choras_methods` | `de-method,misuka-method,modart-method,sparrowpy-method,pyroomacoustics-method,dg-method` | Simulation images to build (services of CHORAS's `docker-compose.yml`) |
+| `choras_pull_methods` | `true` | Pull the simulation images from `choras_method_registry`; `false` builds them |
+| `choras_method_registry` / `choras_method_image_tag` | `ghcr.io/choras-org` / `0.2.0` | Where to pull from and which version; must match the simulation-backend in `choras_version` |
 | `choras_sim_cpus` / `choras_sim_mem_limit` | `4` / `4g` | Limits per simulation container |
 | `choras_backend_cpus` / `choras_backend_mem_limit` | `2` / `4g` | Limits per backend container (meshing, geometry repair) |
 | `choras_web_concurrency` | `2` | Gunicorn workers per backend |

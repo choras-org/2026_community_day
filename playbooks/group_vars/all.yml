@@ -10,6 +10,11 @@ choras_repo: https://github.com/choras-org/CHORAS.git
 choras_participants: user01,user02,user03,user04,user05,user06,user07,user08,user09,user10,user11,user12,user13,user14,user15,user16,user17,user18,user19,user20
 # Compose services from CHORAS's docker-compose.yml (profile sim_method) to build.
 choras_methods: de-method,misuka-method,modart-method,sparrowpy-method,pyroomacoustics-method,dg-method
+# Pull the simulation images from GHCR instead of building them. The tag must match
+# the simulation-backend that choras_version pins (v0.3.0 pins the 0.2.0 methods).
+choras_pull_methods: "true"
+choras_method_registry: ghcr.io/choras-org
+choras_method_image_tag: 0.2.0
 
 # Limits per simulation container (backend #153) and per backend container
 # (meshing and the geometry repair run in the backend, outside the simulation limits).

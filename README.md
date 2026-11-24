@@ -35,9 +35,9 @@ Defaults are in `playbooks/group_vars/all.yml`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `choras_version` | `218636b…` (CHORAS `dev`, tested 2026-11-19) | CHORAS commit or tag |
+| `choras_version` | `v0.3.0` (CHORAS release, commit `82ee838`) | CHORAS commit or tag |
 | `choras_participants` | `user01,user02` | Logins, one instance each, in this order (ports 8101, 8102, …) |
-| `choras_methods` | `de-method` | Simulation images to build (services of CHORAS's `docker-compose.yml`) |
+| `choras_methods` | `de-method,misuka-method,modart-method,sparrowpy-method,pyroomacoustics-method` | Simulation images to build (services of CHORAS's `docker-compose.yml`) |
 | `choras_sim_cpus` / `choras_sim_mem_limit` | `2` / `4g` | Limits per simulation container |
 | `choras_backend_cpus` / `choras_backend_mem_limit` | `2` / `4g` | Limits per backend container (meshing, geometry repair) |
 | `choras_web_concurrency` | `2` | Gunicorn workers per backend |

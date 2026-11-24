@@ -49,6 +49,7 @@ import re
 import statistics
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -108,7 +109,9 @@ def setup_obj(port, obj_path, source, receiver, timeout):
             raise TimeoutError(f"geometry pipeline still {model.get('geometryStatus')} after {timeout:.0f} s")
         time.sleep(2)
     call(port, f"/meshes?modelId={model['id']}", method="PATCH")
-    stem = os.path.splitext(call(port, f"/files/{output_file_id}")["fileName"])[0]
+    # GET /files/<id> returns the file's URL as a plain JSON string.
+    url = call(port, f"/files/{output_file_id}")
+    stem = os.path.splitext(os.path.basename(urllib.parse.urlparse(url).path))[0]
     # Surfaces are the .geo's physical surfaces, named by their .3dm object ids (the frontend's layer keys).
     layers = re.findall(r'^Physical Surface\("([^"]+)"\)', get_text(port, f"/uploads/{stem}.geo"), re.M)
     if not layers:
@@ -413,7 +416,7 @@ def selftest():
             self.wfile.write(data)
 
         def do_GET(self):
-            routes = {"/files": {"id": "slot1", "uploadUrl": "x"}, "/models/30": {"id": 30, "geometryStatus": "Completed", "modelUploadId": 40}, "/files/40": {"id": 40, "fileName": "Room_ab.3dm"}}
+            routes = {"/files": {"id": "slot1", "uploadUrl": "x"}, "/models/30": {"id": 30, "geometryStatus": "Completed", "modelUploadId": 40}, "/files/40": "https://ws.example/api/uploads/Room_ab.3dm"}
             if self.path in routes:
                 return self.reply(routes[self.path])
             if self.path == "/uploads/Room_ab.geo":

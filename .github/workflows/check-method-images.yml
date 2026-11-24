@@ -1,0 +1,18 @@
+name: Check method images
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Ansible
+        run: pipx install ansible-core
+
+      - name: Pull and tag the simulation images
+        run: ansible-playbook playbooks/check_method_images.yml

@@ -1,0 +1,25 @@
+- name: Build the simulation images
+  ansible.builtin.command:
+    argv: "{{ ['docker', 'compose', '--profile', 'sim_method', 'build'] + choras_method_list }}"
+    chdir: "{{ choras_src_dir }}"
+  changed_when: false
+  when: not choras_pull_methods | bool
+
+# de-method is published as ghcr.io/choras-org/choras-de and runs locally as de_image:latest.
+- name: Pull the simulation images
+  ansible.builtin.command:
+    argv: [docker, pull, "{{ choras_method_registry }}/choras-{{ item | regex_replace('-method$', '') }}:{{ choras_method_image_tag }}"]
+  loop: "{{ choras_method_list }}"
+  changed_when: false
+  when: choras_pull_methods | bool
+
+- name: Tag the pulled images with the names CHORAS starts
+  ansible.builtin.command:
+    argv:
+      - docker
+      - tag
+      - "{{ choras_method_registry }}/choras-{{ item | regex_replace('-method$', '') }}:{{ choras_method_image_tag }}"
+      - "{{ item | regex_replace('-method$', '') }}_image:latest"
+  loop: "{{ choras_method_list }}"
+  changed_when: false
+  when: choras_pull_methods | bool

@@ -84,4 +84,5 @@ reordering participants changes ports and isn't handled.
 
 ```sh
 ansible-playbook playbooks/check_templates.yml
+ansible-playbook playbooks/check_method_images.yml   # needs Docker; also runs in CI
 ```

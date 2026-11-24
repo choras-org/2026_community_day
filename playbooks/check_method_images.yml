@@ -1,0 +1,51 @@
+# Pulls the simulation images the way choras_build does and checks that each one
+# got the name CHORAS starts. Needs Docker and the defaults from group_vars:
+#   ansible-playbook playbooks/check_method_images.yml
+- name: Check that the published simulation images pull and get their local names
+  hosts: localhost
+  gather_facts: false
+  vars:
+    choras_pull_methods: "true"
+    choras_method_list: "{{ choras_methods.split(',') | map('trim') | reject('equalto', '') | list }}"
+    ghcr: "{{ choras_method_registry }}"
+    tag: "{{ choras_method_image_tag }}"
+
+  tasks:
+    - name: Pull and tag the simulation images
+      ansible.builtin.include_role:
+        name: choras_build
+        tasks_from: methods
+
+    - name: Read the image IDs, local name and published name in pairs
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - --format
+          - "{{ '{{.Id}}' }}"
+          - de_image:latest
+          - "{{ ghcr }}/choras-de:{{ tag }}"
+          - dg_image:latest
+          - "{{ ghcr }}/choras-dg:{{ tag }}"
+          - misuka_image:latest
+          - "{{ ghcr }}/choras-misuka:{{ tag }}"
+          - modart_image:latest
+          - "{{ ghcr }}/choras-modart:{{ tag }}"
+          - pyroomacoustics_image:latest
+          - "{{ ghcr }}/choras-pyroomacoustics:{{ tag }}"
+          - sparrowpy_image:latest
+          - "{{ ghcr }}/choras-sparrowpy:{{ tag }}"
+      register: ids
+      changed_when: false
+
+    - name: Check that each local name points to the published image
+      ansible.builtin.assert:
+        that:
+          - ids.stdout_lines | length == 12
+          - ids.stdout_lines[0] == ids.stdout_lines[1]
+          - ids.stdout_lines[2] == ids.stdout_lines[3]
+          - ids.stdout_lines[4] == ids.stdout_lines[5]
+          - ids.stdout_lines[6] == ids.stdout_lines[7]
+          - ids.stdout_lines[8] == ids.stdout_lines[9]
+          - ids.stdout_lines[10] == ids.stdout_lines[11]

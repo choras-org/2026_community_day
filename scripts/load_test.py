@@ -96,6 +96,9 @@ def setup_obj(port, obj_path, source, receiver, timeout):
     call(port, f"/files?slot={slot['id']}", method="DELETE")
     geometry = call(port, f"/geometryCheck?fileUploadId={uploaded['id']}", method="POST")
     model = call(port, "/models", {"name": name, "projectId": project["id"], "sourceFileId": geometry["outputModelId"]})
+    # Only POST /models returns outputFileId (GET /models/<id> doesn't); it stays the original file
+    # because the script never accepts or rejects a repaired geometry.
+    output_file_id = model["outputFileId"]
     t0 = time.monotonic()
     while True:  # the inspect/repair pipeline runs in the backend's Celery worker
         model = call(port, f"/models/{model['id']}")
@@ -105,7 +108,7 @@ def setup_obj(port, obj_path, source, receiver, timeout):
             raise TimeoutError(f"geometry pipeline still {model.get('geometryStatus')} after {timeout:.0f} s")
         time.sleep(2)
     call(port, f"/meshes?modelId={model['id']}", method="PATCH")
-    stem = os.path.splitext(call(port, f"/files/{model['outputFileId']}")["fileName"])[0]
+    stem = os.path.splitext(call(port, f"/files/{output_file_id}")["fileName"])[0]
     # Surfaces are the .geo's physical surfaces, named by their .3dm object ids (the frontend's layer keys).
     layers = re.findall(r'^Physical Surface\("([^"]+)"\)', get_text(port, f"/uploads/{stem}.geo"), re.M)
     if not layers:
@@ -410,8 +413,7 @@ def selftest():
             self.wfile.write(data)
 
         def do_GET(self):
-            routes = {"/files": {"id": "slot1", "uploadUrl": "x"}, "/models/30": {"id": 30, "geometryStatus": "Completed",
-                      "outputFileId": 40}, "/files/40": {"id": 40, "fileName": "Room_ab.3dm"}}
+            routes = {"/files": {"id": "slot1", "uploadUrl": "x"}, "/models/30": {"id": 30, "geometryStatus": "Completed", "modelUploadId": 40}, "/files/40": {"id": 40, "fileName": "Room_ab.3dm"}}
             if self.path in routes:
                 return self.reply(routes[self.path])
             if self.path == "/uploads/Room_ab.geo":
@@ -471,7 +473,7 @@ def selftest():
                 return self.reply({"outputModelId": 21})
             if self.path == "/models":
                 assert json.loads(raw)["sourceFileId"] == 21
-                return self.reply({"id": 30, "geometryStatus": "Pending"})
+                return self.reply({"id": 30, "geometryStatus": "Pending", "sourceFileId": 21, "outputFileId": 40})
             if self.path == "/simulations":
                 body = json.loads(raw)
                 assert body["layerIdByMaterialId"] == {"s1": 4, "s2": 4}, body

@@ -38,10 +38,27 @@
         name: [docker.io, docker-compose-v2]
       when: choras_docker.rc != 0
 
+    # Docker's default pools give each compose network a /16 and run out after
+    # about 15 networks (one per participant). /24s from 172.20.0.0/14 give 1024.
+    - name: Create the Docker config directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+
+    # shortcut: overwrites an existing daemon.json; the SRC image has none.
+    - name: Give each Docker network a /24
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {"default-address-pools": [{"base": "172.20.0.0/14", "size": 24}]}
+        mode: "0644"
+      register: choras_docker_daemon
+
     - name: Start Docker
       ansible.builtin.service:
         name: docker
-        state: started
+        state: "{{ 'restarted' if choras_docker_daemon.changed else 'started' }}"
         enabled: true
 
     - name: Check that the SRC-Nginx include directory exists

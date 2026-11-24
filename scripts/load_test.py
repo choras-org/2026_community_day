@@ -8,8 +8,9 @@ one simulation per instance at the same moment (worst case).
 
 Runs on the workspace and talks to the backends directly on 127.0.0.1 (no Nginx,
 no login), so it loads the backends and the simulation containers, not Nginx.
-Polls each run's status once per second, like the frontend does. Standard
-library only.
+Polls each run's status once per second, like the frontend does. Prints each
+run's start and end and, every --report seconds, the runs still going; Ctrl-C
+stops early with a summary so far. Standard library only.
 
     python3 load_test.py                      # user01-user15, 10 min, think 30-180 s
     python3 load_test.py --duration 45 --think 60,300
@@ -86,32 +87,55 @@ def set_method(port, sim, name):
     return call(port, f"/simulations/{sim['id']}", body, method="PUT")
 
 
+def log(msg):
+    print(f"{time.strftime('%H:%M:%S')}  {msg}", flush=True)
+
+
 class Running:
-    """Count of simulations running right now, and the peak."""
+    """Runs going right now (user -> [run id, status, percentage, start]) and the peak count."""
 
     def __init__(self):
-        self.lock, self.now, self.peak = threading.Lock(), 0, 0
+        self.lock, self.active, self.peak = threading.Lock(), {}, 0
 
-    def add(self, n):
+    def begin(self, user):
         with self.lock:
-            self.now += n
-            self.peak = max(self.peak, self.now)
+            self.active[user] = [None, "Starting", 0, time.monotonic()]
+            self.peak = max(self.peak, len(self.active))
+
+    def update(self, user, run):
+        with self.lock:
+            self.active[user][:3] = [run.get("id"), run.get("status"), run.get("percentage") or 0]
+
+    def end(self, user):
+        with self.lock:
+            self.active.pop(user, None)
+
+    def report(self):
+        with self.lock:
+            now = time.monotonic()
+            items = [f"{u} {st} {pct}% {now - t0:.0f}s" for u, (_, st, pct, t0) in sorted(self.active.items())]
+        log(f"{len(items)} running: " + ", ".join(items) if items else "0 running")
 
 
-def run_one(port, sim, timeout, poll, running):
+def run_one(user, port, sim, timeout, poll, running):
     t0 = time.monotonic()
-    running.add(1)
+    running.begin(user)
     try:
         run = call(port, "/simulations/run", {"simulationId": sim["id"]})
+        running.update(user, run)
         status = run.get("status")
         while status not in DONE and time.monotonic() - t0 < timeout:
             time.sleep(poll)
-            status = call(port, f"/simulations/run/{run['id']}/status").get("status")
-        return (status if status in DONE else "Timeout", time.monotonic() - t0)
+            state = call(port, f"/simulations/run/{run['id']}/status")
+            running.update(user, state)
+            status = state.get("status")
+        result = (status if status in DONE else "Timeout", time.monotonic() - t0)
     except Exception as exc:  # one failing instance must not stop the others
-        return (f"Failed: {exc}", time.monotonic() - t0)
+        result = (f"Failed: {exc}", time.monotonic() - t0)
     finally:
-        running.add(-1)
+        running.end(user)
+    log(f"{user} {result[0]} after {result[1]:.0f} s")
+    return result
 
 
 def run_user(user, port, sim, start, args, running, result):
@@ -119,12 +143,12 @@ def run_user(user, port, sim, start, args, running, result):
     start.wait()
     runs = result[user] = []
     if args.burst:
-        runs.append(run_one(port, sim, args.timeout, args.poll, running))
+        runs.append(run_one(user, port, sim, args.timeout, args.poll, running))
         return
     end = time.monotonic() + args.duration * 60
     time.sleep(random.uniform(0, args.stagger))
     while time.monotonic() < end:
-        runs.append(run_one(port, sim, args.timeout, args.poll, running))
+        runs.append(run_one(user, port, sim, args.timeout, args.poll, running))
         time.sleep(random.uniform(*args.think))
 
 
@@ -135,7 +159,8 @@ def main(argv=None):
     ap.add_argument("--set-method", help="switch each picked simulation to this method first, e.g. misuka")
     ap.add_argument("--map-file", default=USERS_MAP)
     ap.add_argument("--base-port", type=int, default=8100)
-    ap.add_argument("--timeout", type=float, default=1800, help="seconds per run")
+    ap.add_argument("--timeout", type=float, default=900, help="seconds per run before it counts as Timeout")
+    ap.add_argument("--report", type=float, default=60, help="seconds between progress reports")
     ap.add_argument("--poll", type=float, default=1.0, help="seconds between status requests")
     ap.add_argument("--burst", action="store_true", help="all at once, one run each")
     ap.add_argument("--duration", type=float, default=10, help="minutes (not with --burst)")
@@ -172,7 +197,7 @@ def main(argv=None):
         return 0 if plan else 1
 
     start, result, running = threading.Event(), {}, Running()
-    threads = [threading.Thread(target=run_user, args=(u, ports[u], s, start, args, running, result))
+    threads = [threading.Thread(target=run_user, args=(u, ports[u], s, start, args, running, result), daemon=True)
                for u, s in plan.items()]
     for t in threads:
         t.start()
@@ -180,17 +205,25 @@ def main(argv=None):
                                        f"stagger {args.stagger:g} s")
     print(f"\nStarting {len(threads)} groups at {time.strftime('%H:%M:%S')} ({mode}) ...")
     start.set()
-    for t in threads:
-        t.join()
+    next_report = time.monotonic() + args.report
+    try:
+        while any(t.is_alive() for t in threads):
+            time.sleep(0.2)
+            if time.monotonic() >= next_report:
+                running.report()
+                next_report += args.report
+    except KeyboardInterrupt:
+        print("\nStopped; runs still going in the backends continue there. Summary so far:")
+        running.report()
 
     print()
     for user in plan:
-        runs = result[user]
+        runs = list(result.get(user, []))
         done = [secs for status, secs in runs if status == "Completed"]
         other = sorted({status for status, _ in runs if status != "Completed"})
         median = f"median {statistics.median(done):5.0f} s" if done else ""
         print(f"{user}  {plan[user].get('simulationMethod'):<16} {len(done)}/{len(runs)} completed  {median}  {' '.join(other)}")
-    runs = [r for rs in result.values() for r in rs]
+    runs = [r for rs in list(result.values()) for r in rs]
     ok = [secs for status, secs in runs if status == "Completed"]
     print(f"\nCompleted {len(ok)}/{len(runs)} runs, at most {running.peak} running at once", end="")
     if ok:

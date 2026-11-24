@@ -43,6 +43,8 @@ standard library only.
   CHORAS turns the OBJ's Y-up into Z-up (CHORAS X = OBJ x, Y = −OBJ z, Z = OBJ y),
   so in CHORAS coordinates the hall is 8.94 × 17.24 m with the floor at Z = 0 and
   6.2 m walls; source 4.5,3,1.5 and receiver 4.5,10,1.2 are inside it.
+  `models/Atlas8340_empty_nocolumns.obj` is the same hall without the columns
+  (34 instead of 84 faces, same dimensions, same positions work).
 - **`--users`:** the logins to use (default `user01`–`user15`).
 
 ```bash

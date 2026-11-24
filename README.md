@@ -27,6 +27,7 @@ How it works:
 | `playbooks/roles/nginx_standin` | HTTPS server block like SRC-Nginx's, with a self-signed certificate |
 | `playbooks/check_templates.yml` | Check that the map and the compose files agree on the ports |
 | `local-test/` | The first manual end-to-end test on a Mac (2026-11-19), without Ansible |
+| `scripts/` | Operations on the workspace: load test, export results, reset instances ([scripts/README.md](scripts/README.md)) |
 
 ## Parameters
 
